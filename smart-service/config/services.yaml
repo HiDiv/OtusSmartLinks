@@ -18,3 +18,9 @@ services:
 
     # add more service definitions when explicit configuration is needed
     # please note that last definitions always *replace* previous ones
+
+#when@test:
+#    services:
+#        App\Tests\Support\TestHandlers\ErrorThrowingHandler:
+#            tags:
+#                - { name: 'app.request_handler', priority: 1000 }
