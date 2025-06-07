@@ -1,0 +1,129 @@
+name: CI – Smart Service
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test-smart-service:
+    name: Run Smart Service tests
+    runs-on: ubuntu-24.04
+
+    # Поднимем MariaDB как сервис – она будет доступна по hostname "mariadb"
+    services:
+      mariadb:
+        image: mariadb:10.11.10-ubi9
+        ports:
+          - 3306:3306
+        env:
+          # эти переменные создадут базу test_db и пользователя test:test
+          MARIADB_ROOT_PASSWORD: root
+          MARIADB_DATABASE: test_db
+          MARIADB_USER: test
+          MARIADB_PASSWORD: test
+        # Ждём, пока MariaDB не начнёт отвечать
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot --silent"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+
+    steps:
+      # 1) Сначала весь репозиторий
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2) Настраиваем PHP 8.3 + расширения pdo_mysql, xdebug, инструменты composer и codeception
+      - name: Setup PHP 8.3
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo_mysql, xdebug
+          tools: composer, codeception
+          coverage: xdebug
+          ini-values: xdebug.mode="develop,coverage"
+
+      # Создаём .env.test.local
+      - name: Configure test environment
+        run: |
+          cp smart-service/.env.test smart-service/.env.test.local
+          echo 'SMART_DATABASE_URL="mysql://test:test@127.0.0.1:3306/test_db"' >> smart-service/.env.test.local
+
+      # 3) Кэшируем composer-пакеты (для подпапки smart-service)
+      - name: Get composer cache dir
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> $GITHUB_OUTPUT
+
+      - name: Cache composer dependencies
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: ${{ runner.os }}-smart-service-composer-${{ hashFiles('smart-service/composer.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-smart-service-composer-
+
+      # 4) Устанавливаем зависимости именно для подпроекта
+      - name: Install composer dependencies
+        working-directory: smart-service
+        env:
+          APP_ENV: test
+        run: |
+          composer install --no-progress --no-suggest --optimize-autoloader
+          composer dump-env test
+
+      # 6) Ждём, чтобы MariaDB была «здоровой»
+      - name: Wait for MariaDB health status
+        run: |
+          # Ждём пока контейнер mariadb не перейдёт в STATE "healthy"
+          for i in $(seq 1 30); do
+            STATUS=$(docker inspect --format='{{.State.Health.Status}}' $(docker ps -qf "ancestor=mariadb:10.11.10-ubi9"))
+            if [ "$STATUS" == "healthy" ]; then
+              echo "MariaDB is healthy!"
+              exit 0
+            fi
+            echo "Waiting for MariaDB health status... (current: $STATUS)"
+            sleep 2
+          done
+          echo "MariaDB did not become healthy in time."
+          exit 1
+
+      # 7) Создаём схему и прогоняем миграции
+      - name: Run Doctrine migrations
+        working-directory: smart-service
+        env:
+          # Symfony использует .env.test.local, но можно явно указать, что env=test
+          APP_ENV: test
+          # Symfony сам подхватит DATABASE_URL из .env.test.local
+        run: |
+          php bin/console doctrine:database:create --if-not-exists --env=test
+          php bin/console doctrine:migrations:migrate --no-interaction --env=test
+
+      # 9) Запускаем Codeception-тесты (unit, integration, functional). Сборка покрытия и шпаргалка в xml/phpunit
+      - name: Run Codeception tests with coverage
+        working-directory: smart-service
+        env:
+          APP_ENV: test
+        run: |
+          vendor/bin/codecept run --coverage --coverage-html --coverage-xml --phpunit-xml
+
+      # 10) Сохраняем артефакт отчёта о покрытии
+      - name: Upload local coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: smart-service-coverage-report
+          path: smart-service/tests/_output/coverage/
+
+      # 11) Отправляем coverage в Codecov
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: smart-service/tests/_output/coverage.xml
+
+      # 12) Отправляем xml-файл с результатами тестов
+      - name: Upload PHPUnit results to Codecov
+        if: ${{ !cancelled() }}
+        uses: codecov/test-results-action@v1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: smart-service/tests/_output/phpunit-report.xml
