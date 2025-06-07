@@ -2,13 +2,12 @@
 
 namespace App\Entity;
 
-use App\Repository\ConditionRepository;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Bridge\Doctrine\Types\UuidType;
 use Symfony\Component\Uid\Uuid;
 
-#[ORM\Entity(repositoryClass: ConditionRepository::class)]
-#[ORM\Table(name: 'condition')]
+#[ORM\Entity]
+#[ORM\Table(name: 'strategy_condition')]
 #[ORM\Index(name: 'idx_condition_tag', columns: ['handler_tag'])]
 class Condition
 {

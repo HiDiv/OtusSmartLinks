@@ -2,13 +2,12 @@
 
 namespace App\Entity;
 
-use App\Repository\ActionRepository;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Bridge\Doctrine\Types\UuidType;
 use Symfony\Component\Uid\Uuid;
 
-#[ORM\Entity(repositoryClass: ActionRepository::class)]
-#[ORM\Table(name: 'action')]
+#[ORM\Entity]
+#[ORM\Table(name: 'strategy_action')]
 #[ORM\Index(name: 'idx_action_tag', columns: ['handler_tag'])]
 class Action
 {
