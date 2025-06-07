@@ -9,7 +9,9 @@ modules:
         - Asserts
         -   Symfony:
                 app_path: 'src'
+                var_path: 'var'
                 environment: 'test'
+                bootstrap: true
         -   Doctrine:
                 depends: Symfony
                 cleanup: true

@@ -48,6 +48,7 @@ jobs:
         run: |
           cp smart-service/.env.test smart-service/.env.test.local
           echo 'SMART_DATABASE_URL="mysql://test:test@127.0.0.1:3306/test_db"' >> smart-service/.env.test.local
+          cat smart-service/.env.test.local
 
       # 3) Кэшируем composer-пакеты (для подпапки smart-service)
       - name: Get composer cache dir
